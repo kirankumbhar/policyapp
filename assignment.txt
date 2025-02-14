@@ -1,0 +1,235 @@
+Org
+    id - uuid
+    name - varchar
+    domain - varchar(255) unique
+
+User
+    id - uuid
+    org_id - FK(Org)
+    dept_id - FK(Dept)
+
+Dept
+    id - uuid
+    name - varchar(255)
+
+DeptPolicy
+    id - uuid
+    dept_id - FK(Dept)
+    policy_id - FK(Policy)
+
+
+Policy
+    id - uuid
+    name - varchar(512)
+    org_id - FK(Org)
+    description - text
+    compliance_framework - enum (constant like SOC2)
+    enforcement_type enum (MANDATORY, RECOMMENDED, OPTIONAL)
+
+PolicyTemplate
+    id - uuid
+    policy_id - FK(Policy)
+    version - varchar(10) some standard semantic version
+    status - enum (DRAFT, IN_REVIEW, ACTIVE, ARCHIVED)
+    approved_by - nullable FK(User)
+    unique(policy_id, status) //there should be only one active policy template
+
+PolicyTemplateLog
+    id - uuid
+    policy_template_id FK(PolicyTemplate)
+    prev_status - enum
+    curr_status - enum
+    updated_by - FK(User)
+
+
+PolicyStep
+    id - uuid
+    policy_template_id - FK(PolicyTemplate)
+    name - varchar(255)
+    description - text
+    knowledge_document - varchar(512) //How to guide for policy step
+
+PolicyStepField //if any user input required for step completion
+    id - uuid
+    field_name - varchar(255)
+    field_key - varchar(255)
+    field_value_type - enum (number, boolean, string, datetime)
+
+PolicyAcknowledgment
+    id uuid
+    policy_template_id = FK(PolicyVersion)
+    user_id - FK(User)
+    is_acknowledged = boolean //true only if all steps of policy template are completed
+    acknowledged_at - datetime
+    requested_at - datetime
+    expired_at - datetime
+    is_recurring - boolean //true if periodic acknowledgement
+    is_user_initiated - boolean //true if acknowledgement request received by customer
+
+PolicyAcknowledgmentStep
+    id - uuid
+    policy_acknowldegment_id - FK(PolicyAcknowledgment)
+    policy_step_id - FK(PolicyStep)
+    step_report_document - varchar(512) //reports to be attached for step completion 
+    is_acknowledged- boolean
+
+PolicyStepFieldValue
+    id - uuid
+    policy_acknowldegment_step_id - FK (PolicyAcknowledgmentStep)
+    policy_step_field_id - FK(PolicyStepField)
+    field_value - text
+    
+    
+
+    
+
+
+
+API and Services for requirements
+
+A company needs multiple types of policies for becoming SOC 2 compliant (Infosec policy,
+acceptable use policy, cryptographic policy , etc.)
+
+GET api/v1/policy
+Get all policy objects for the company
+POST api/v1/policy
+Create policy object
+
+
+To make our customer’s life easy, Sprinto comes built in with a set of default policy
+templates - one for each type or policy. The concept of a policy template itself needn’t be
+visible to our customers and is useful only for us to generate these policies for them if they
+so choose.
+
+1. Seed data with default PolicyTemplate objects
+
+2. Get the active policy template
+    GET api/v1/policy/:policy_id/policytemplate?status=ACTIVE
+
+3. Get all steps of the active policy template
+    GET api/v1/policytemplate/:policy_template_id/policystep
+
+Active template + template steps => data to be generated for policy
+
+
+Sometimes, customers don’t want to use the policy that is generated from our templates
+and would like to use their own. Our design should be able to accommodate this
+requirement.
+
+1. Crate a new policy template object default status will be DRAFT
+    POST api/v1/policytemplate
+
+2. Add steps to the newly created policy template (customer providing data for this)
+    POST api/v1/policytemplate/:policy_template_id/Policystep
+
+3. Approve the template
+    PUT api/v1/policytemplate
+
+Active template + template steps => data to be generated for policy
+
+
+When a new policy is created, it needs to be approved by a designated person (lets say the
+CTO of the company).
+1. Approve the template
+    PUT api/v1/policytemplate
+    //Set status to active and approved_by to the person approving the policy
+
+
+An approved policy needs to be acknowledged by all employees to the effect that they hav
+read and agree to abide by the policies. Acknowledgement is a simple “I agree to abide by
+the policies” checkbox.
+Here depending on the policy there might be multiple policy steps to be completed
+
+Scenario 1: User can go through all steps and click checkbox at the end of the policy
+    1. Create PolicyAcknowledgment object
+    2. For each step in Active policy template
+        Create PolicyAcknowledgmentStep with is_acknowledged = true
+    3. Update PolicyAcknowledgment object with is_acknowledged = true
+
+Scenario 2: User has to update some input or upload some report files for particular steps
+For e.g. for vulnerability step user might upload report of vulnerability test
+    1. Same as Scenario 1
+    2. For each step in Active policy template
+        Create PolicyAcknowledgmentStep with is_acknowledged = true
+        upload document and set step_report_document with asset path
+    3. Same as Scenario 1
+
+Employees need to acknowledge policies at 2 different points of time. First, when a ne
+employee joins, they need to acknowledge all the policies within 30 days of joining. Second,
+all employees need to acknowledge all policies periodically thereafter (at least once a year).
+For first time policy acknowledgement
+    Create PolicyAcknowledgment object with is_recurring False
+For periodic policy acknowledgement
+    Create PolicyAcknowledgment object with is_recurring true
+
+
+For audit reasons, we need to keep information of all the past acknowledgements of every
+employee.
+For a given policy you can get all acknowledgements
+    SELECT * from PolicyAcknowledgment AS pa
+    INNER JOIN PolicyTemplate AS pt ON pa.policy_template_id = pt.id 
+    WHERE pt.polic_id == policy_id
+
+
+We need to know how our data model will support the ability to request acknowledgements
+from new employees when they join, and periodically thereafter (ex: annually). We also need
+to be able to track whether the acknowledgements are completed within 30 days from the
+time of request. We might have to raise the right kind of alerts if acknowledgements are not
+happening in time - like escalate this to a CXO in the company.
+
+To support acknowledgement request
+    POST api/v2/policy/:policy_id/PolicyAcknowledgment
+    Create new policy acknowledge object
+
+To track acknowledgement completion
+    Run a daily job to get all PolicyAcknowledgment objects where is_acknowledged is False
+    Send notification to users if expiry date is near (30 days expiry)
+
+
+Sometimes, as compliance frameworks change, we’d like to update the the policy
+templates. When we, as builders of Sprinto, change the template, we need to be able to
+show a prompt to our customers that they need to upgrade to the latest version of the
+policy wording. Before the upgrade happens the currently active policy in the company
+should continue to work.
+Some policies have specific configuration that is given by the customer at the time
+setting creating the policy. For example, a vulnerability management policy will have SLA’s
+for fixing vulnerabilities. This is an input that we need to receive from the customer when w
+generate the policy. When this configuration is changed, the policy needs to be approve
+before the new policy takes effect. In the meantime the previous policy should be functional
+i.e if a new employee joins, they should be signing the version that is currently active. Once
+the new policy is approved that should be the one used for any new hires joining thereafter.
+Same logic holds true for periodic policy acknowledgements as well.
+When policy is modified, there is no hard and fast requirement for employees wh
+acknowledged earlier to re-acknowledge. However, our data model should be able to
+handle this scenario if it comes up.
+
+Everytime template changes
+1. Create a new PolicyTemplate object with new version and status as DRAFT for policy id
+2. Get the new template approved by responsible user from org procedure looks like this
+    2.1 Get the current active template for policy_id
+    2.2 Set the active template status as ARCHIVED
+    2.3 For new template, set template status as ACTIVE and approved_by user_id who approves it
+    2.4 Crate PolicyTemplateLog for both template to maintain the audit information
+3. Inform existing user who adhere to this policy with new verion of policy
+4. since there is only one template active at a time new user will automtically get new policy versions
+
+And our customers should be able to request an
+acknowledgement only for the policies that were changed and not other policies.
+Crate PolicyAcknowledgment object with user_id of the user who requested and is_user_initiated = true
+
+We should be able to distinguish whether a policy acknowledgement is happening as a part
+of a periodic exercise or as part of new joining. Apart from these 2 events, customers
+should be able to trigger an acknowledgement from selected employees manually. It is
+preferable if our data model is able to track this type of a an acknowledgement as well.
+is_recurring flag to be used for distinguishtion
+customer triggered acknowledgement can be distinguished by is_user_initiated flag
+
+
+The set of policies to be acknowledged by different types of employees is different.
+example, an HR employee may have to acknowledge only 3 policies while an engineering
+employee needs to acknowledge 15 policies. The list of policies to be acknowledged by
+different roles should be configurab
+
+to get all policies for department
+SELECT * from Policy AS p INNER JOIN DeptPolicy AS dp ON p.id = dp.policy_id WHERE dp.dept_id = dept_id
+You can add new policy to dept in DeptPolicy

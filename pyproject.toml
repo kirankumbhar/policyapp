@@ -1,0 +1,16 @@
+[tool.poetry]
+name = "policyapp"
+version = "0.1.0"
+description = ""
+authors = ["kiran <kiranpk189@gmail.com>"]
+readme = "README.md"
+
+[tool.poetry.dependencies]
+python = "^3.13"
+django = "^5.1.6"
+djangorestframework = "^3.15.2"
+
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
