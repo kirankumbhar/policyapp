@@ -29,22 +29,6 @@ class PolicyViewSet(viewsets.ReadOnlyModelViewSet):
     serializer_class = PolicySerializer
 
 class PolicyTemplateViewSet(viewsets.ModelViewSet):
-    """
-    ViewSet for policy templates with both read and create operations.
-    
-    list:
-    Return a list of policy templates for a specific policy.
-    Optional status filter can be applied using query parameter.
-    
-    retrieve:
-    Return a specific policy template by its ID.
-    
-    create:
-    Create a new policy template with DRAFT status.
-    Can be accessed via:
-    1. POST api/v1/policy/{policy_id}/policytemplate/
-    2. POST api/v1/policytemplate/ (with policy_id in body)
-    """
 
     def get_serializer_class(self):
         if self.action in ['create']:
@@ -68,19 +52,16 @@ class PolicyTemplateViewSet(viewsets.ModelViewSet):
             'policystep_set__policystepfield_set'
         )
 
-        # Filter by policy if policy_pk is in URL
         policy = self.get_policy()
         if policy:
             queryset = queryset.filter(policy_id=policy.id)
 
-        # Apply status filter if provided
         status_param = self.request.query_params.get('status')
         if status_param:
             if status_param.upper() not in dict(PolicyTemplate._meta.get_field('status').choices):
                 raise ValidationError({'status': 'Invalid status value'})
             queryset = queryset.filter(status=status_param.upper())
         else:
-            # Default to ACTIVE status for list and retrieve
             if self.action in ['list', 'retrieve']:
                 queryset = queryset.filter(status=TemplateStatus.ACTIVE)
 
@@ -100,18 +81,8 @@ class PolicyTemplateViewSet(viewsets.ModelViewSet):
     @action(detail=True, methods=['post'], url_path='activate')
     @transaction.atomic
     def activate(self, request, *args, **kwargs):
-        """
-        Activate a policy template and archive the previously active template.
-        
-        This endpoint will:
-        1. Validate the current template can be activated
-        2. Archive the currently active template (if exists)
-        3. Activate the requested template
-        4. Create logs for both status changes
-        """
         template = self.get_object()
         
-        # Validate the activation request
         serializer = PolicyTemplateUpdateSerializer(
             template,
             data=request.data,
@@ -120,15 +91,12 @@ class PolicyTemplateViewSet(viewsets.ModelViewSet):
         serializer.is_valid(raise_exception=True)
         print(serializer.validated_data)
         
-        # Find currently active template for this policy
         active_template = PolicyTemplate.objects.filter(
             policy=template.policy,
             status=TemplateStatus.ACTIVE
         ).first()
         
-        # Archive current active template if it exists
         if active_template:
-            # Create log for archiving previous template
             PolicyTemplateLog.objects.create(
                 policy_template=active_template,
                 prev_status=TemplateStatus.ACTIVE,
@@ -136,11 +104,9 @@ class PolicyTemplateViewSet(viewsets.ModelViewSet):
                 updated_by=serializer.validated_data["approved_by"]
             )
             
-            # Update status to archived
             active_template.status = TemplateStatus.ARCHIVED
             active_template.save()
         
-        # Create log for activating new template
         PolicyTemplateLog.objects.create(
             policy_template=template,
             prev_status=template.status,
@@ -148,12 +114,10 @@ class PolicyTemplateViewSet(viewsets.ModelViewSet):
             updated_by=serializer.validated_data["approved_by"]
         )
         
-        # Update template status and approved_by
         template.status = TemplateStatus.ACTIVE
         template.approved_by = serializer.validated_data["approved_by"]
         template.save()
         
-        # Return updated template data
         response_serializer = PolicyTemplateReadSerializer(template)
         return Response(
             response_serializer.data,
