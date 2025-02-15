@@ -48,11 +48,13 @@ class Policy(models.Model):
     description = models.TextField()
     compliance_framework = models.CharField(
         max_length=50,
-        choices=ComplianceFramework.choices
+        choices=ComplianceFramework.choices,
+        default=ComplianceFramework.SOC2
     )
     enforcement_type = models.CharField(
         max_length=20,
-        choices=EnforcementType.choices
+        choices=EnforcementType.choices,
+        default=EnforcementType.OPTIONAL
     )
 
     def __str__(self)-> str:
@@ -75,7 +77,8 @@ class PolicyTemplate(models.Model):
     version = models.CharField(max_length=10)
     status = models.CharField(
         max_length=20,
-        choices=TemplateStatus.choices
+        choices=TemplateStatus.choices,
+        default=TemplateStatus.DRAFT
     )
     approved_by = models.ForeignKey(
         User,
@@ -106,7 +109,7 @@ class PolicyStep(models.Model):
     policy_template = models.ForeignKey(PolicyTemplate, on_delete=models.CASCADE)
     name = models.CharField(max_length=255)
     description = models.TextField()
-    knowledge_document = models.CharField(max_length=512)
+    knowledge_document = models.CharField(max_length=512, null=True, blank=True)
 
     def __str__(self):
         return f"{self.name} - {self.policy_template}"
@@ -124,7 +127,8 @@ class PolicyStepField(models.Model):
     field_key = models.CharField(max_length=255)
     field_value_type = models.CharField(
         max_length=20,
-        choices=FieldValueType.choices
+        choices=FieldValueType.choices,
+        default=FieldValueType.STRING
     )
 
     def __str__(self):
@@ -148,7 +152,7 @@ class PolicyAcknowledgmentStep(models.Model):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     policy_acknowledgment = models.ForeignKey(PolicyAcknowledgment, on_delete=models.CASCADE)
     policy_step = models.ForeignKey(PolicyStep, on_delete=models.CASCADE)
-    step_report_document = models.CharField(max_length=512)
+    step_report_document = models.CharField(max_length=512, null=True, blank=True)
     is_acknowledged = models.BooleanField(default=False)
 
     def __str__(self):

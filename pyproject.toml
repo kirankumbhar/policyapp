@@ -9,6 +9,7 @@ readme = "README.md"
 python = "^3.13"
 django = "^5.1.6"
 djangorestframework = "^3.15.2"
+drf-nested-routers = "^0.94.1"
 
 
 [build-system]

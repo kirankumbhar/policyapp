@@ -17,15 +17,24 @@ Including another URLconf
 from django.contrib import admin
 from django.urls import path, include
 from rest_framework.routers import DefaultRouter
-from core.views import PolicyViewSet, PolicyTemplateListView
+from rest_framework_nested import routers
+from core.views import (PolicyViewSet,
+                        PolicyTemplateViewSet,
+                        DeptViewSet,
+                        DeptPolicyViewSet,
+                        PolicyAcknowledgmentViewSet)
 
 router = DefaultRouter()
 router.register(r'policy', PolicyViewSet, basename='policy')
+router.register(r'policytemplate', PolicyTemplateViewSet, basename='policytemplate')
+router.register(r'policy-acknowledgments', PolicyAcknowledgmentViewSet)
+router.register(r'depts', DeptViewSet, basename='dept')
+router.register(r'dept-policies', DeptPolicyViewSet, basename='dept-policy')
+policy_router = routers.NestedSimpleRouter(router, r'policy', lookup='policy')
+policy_router.register(r'policytemplate', PolicyTemplateViewSet, basename='policy-template')
 
 urlpatterns = [
     path('admin/', admin.site.urls),
     path('api/v1/', include(router.urls)),
-    path('api/v1/policy/<uuid:policy_id>/policytemplate', 
-         PolicyTemplateListView.as_view(), 
-         name='policy-template-list'),
+    path('api/v1/', include(policy_router.urls))
 ]
